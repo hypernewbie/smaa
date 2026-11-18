@@ -286,16 +286,23 @@
  *    with SMAA_TU4X_PHASE set to 0 for northwest and 1 for southeast.
  *
  * 2. Apply SMAA to each frame with 'subsampleIndices' set to zero and
- *    SMAA_NEIGHBORHOOD_BLENDING_STRENGTH set to 0.5. Save the result of
- *    neighborhood blending for the next frame, before the temporal resolve.
+ *    SMAA_NEIGHBORHOOD_BLENDING_STRENGTH set to 0.5. The demo also uses
+ *    SMAA_LOCAL_CONTRAST_ADAPTATION_FACTOR of 1.5 and SMAA_THRESHOLD of
+ *    0.2 with the high preset for TU4x. Save the neighborhood blending
+ *    result for the next frame, before the temporal resolve.
  *
- * 3. Call SMAATU4xResolvePS with this frame's neighborhood blending result
- *    and the one you saved last frame. If there's no valid sample at the
- *    reprojected coordinates, use the current frame's color instead.
+ * 3. Call SMAATU4xResolvePS with the current frame (point sampling) and the
+ *    saved frame (linear sampling). Use texcoord - velocity for the history
+ *    lookup when reprojection is on, and texcoord otherwise. Velocity is
+ *    current minus previous in UV units, with the jitter removed. If the
+ *    gather would read invalid history, use the current frame's color.
  *
- * 4. Temporal reprojection (SMAA_REPROJECTION) is supported as well: the
- *    previous frame is attenuated when the velocity changed, the same way it
- *    is done for SMAA T2x (see SMAAResolvePS).
+ * 4. With SMAA_REPROJECTION, both frames' alpha channels must carry the
+ *    velocity magnitude packed by SMAANeighborhoodBlendingPS. Low confidence
+ *    fades the whole temporal reconstruction back to the current frame.
+ *
+ * This resolve averages the virtual 2x2 samples to one output pixel. It
+ * does not by itself render to a larger output image.
  *
  * f) If motion blur is used, you may want to do the edge detection pass
  *    together with motion blur. This has two advantages:
@@ -332,7 +339,7 @@
 #define SMAA_DISABLE_CORNER_DETECTION
 #elif defined(SMAA_PRESET_HIGH)
 #ifndef SMAA_THRESHOLD
-#define SMAA_THRESHOLD 0.2
+#define SMAA_THRESHOLD 0.1
 #endif
 #define SMAA_MAX_SEARCH_STEPS 16
 #define SMAA_MAX_SEARCH_STEPS_DIAG 8
@@ -360,7 +367,7 @@
  *   contrast edges are properly filtered by just 2x.
  */
 #ifndef SMAA_THRESHOLD
-#define SMAA_THRESHOLD 0.2
+#define SMAA_THRESHOLD 0.1
 #endif
 
 /**
@@ -419,11 +426,10 @@
  * is applied. 0.0 keeps the original color, while 1.0 uses the full SMAA
  * result.
  *
- * The default of 0.5 assumes TU4x, which adds more filtering. For SMAA T2x
- * or spatial-only SMAA, use 1.0.
+ * TU4x adds more filtering in its resolve, so it can use 0.5 instead.
  */
 #ifndef SMAA_NEIGHBORHOOD_BLENDING_STRENGTH
-#define SMAA_NEIGHBORHOOD_BLENDING_STRENGTH 0.5
+#define SMAA_NEIGHBORHOOD_BLENDING_STRENGTH 1.0
 #endif
 
 /**
@@ -434,10 +440,10 @@
  * that, if there is too much contrast in a direction, that will hide
  * perceptually contrast in the other neighbors.
  *
- * Assumes temporal upsampling. For spatial-only SMAA, use 2.0.
+ * TU4x can use 1.5 instead.
  */
 #ifndef SMAA_LOCAL_CONTRAST_ADAPTATION_FACTOR
-#define SMAA_LOCAL_CONTRAST_ADAPTATION_FACTOR 1.5
+#define SMAA_LOCAL_CONTRAST_ADAPTATION_FACTOR 2.0
 #endif
 
 /**
@@ -1345,6 +1351,7 @@ float4 SMAANeighborhoodBlendingPS(float2 texcoord,
         // Antialias velocity for proper reprojection in a later stage:
         float2 velocity = blendingWeight.x * SMAA_DECODE_VELOCITY(SMAASampleLevelZero(velocityTex, blendingCoord.xy));
         velocity += blendingWeight.y * SMAA_DECODE_VELOCITY(SMAASampleLevelZero(velocityTex, blendingCoord.zw));
+        velocity = lerp(SMAA_DECODE_VELOCITY(SMAASampleLevelZero(velocityTex, texcoord)), velocity, SMAA_NEIGHBORHOOD_BLENDING_STRENGTH);
 
         // Pack velocity into the alpha channel:
         color.a = sqrt(5.0 * length(velocity));
@@ -1353,6 +1360,13 @@ float4 SMAANeighborhoodBlendingPS(float2 texcoord,
         return color;
     }
 }
+
+#if SMAA_REPROJECTION
+float SMAAReprojectionConfidence(float currentAlpha, float previousAlpha) {
+    float delta = abs(currentAlpha * currentAlpha - previousAlpha * previousAlpha) / 5.0;
+    return saturate(1.0 - sqrt(delta) * SMAA_REPROJECTION_WEIGHT_SCALE);
+}
+#endif
 
 //-----------------------------------------------------------------------------
 // Temporal Upsampling (Optional)
@@ -1373,7 +1387,7 @@ float4 SMAANeighborhoodBlendingPS(float2 texcoord,
 #define SMAA_TU_UNDEF_RCP
 #endif
 
-// From Jorge Jimenez's Dynamic Temporal Antialiasing presentation, slide 37.
+// Shared differential blend from Dynamic Temporal Antialiasing and Upsampling (slide 42).
 float3 SMAADifferentialBlendWeight(float3 neighborhood1[4],
                                    float3 neighborhood2[4]) {
     float2 deltaH = float2(
@@ -1405,7 +1419,7 @@ float3 SMAADifferentialBlendWeight(float3 neighborhood1[4],
 #undef SMAA_TU_UNDEF_RCP
 #endif
 
-// From Jorge Jimenez's Dynamic Temporal Antialiasing presentation, slide 33.
+// Temporal checkerboard reconstruction from the same presentation (slide 38).
 float3 SMAADifferentialBlend(float3 neighborhood[4], float3 weights) {
 #if defined(SMAA_GLSL_3) || defined(SMAA_GLSL_4)
     float4 color = float4(0.0);
@@ -1417,50 +1431,55 @@ float3 SMAADifferentialBlend(float3 neighborhood[4], float3 weights) {
     return (0.5 * weights.z) * color.rgb;
 }
 
-// 'previousTexcoord' is the current pixel's position in the previous frame,
-// calculated without the subpixel jitter.
+// The history lookup excludes jitter. Filter it to preserve fractional motion;
+// current taps are on texel centers and are still point sampled.
 float4 SMAATU4xResolvePS(float2 texcoord,
                          float2 previousTexcoord,
                          float2 inputPixelSize,
                          SMAATexture2D(currentColorTex),
                          SMAATexture2D(previousColorTex)) {
-    float4 currentColor = SMAASampleLevelZeroPoint(currentColorTex, texcoord);
-    float4 previousColor = SMAASampleLevelZeroPoint(previousColorTex, previousTexcoord);
+    float4 current = SMAASampleLevelZeroPoint(currentColorTex, texcoord);
+    float4 previous = SMAASampleLevelZero(previousColorTex, previousTexcoord);
+
+#if SMAA_REPROJECTION
+    float confidence = SMAAReprojectionConfidence(current.a, previous.a);
+    SMAA_BRANCH
+    if (confidence <= 0.0)
+        return current;
+#endif
+
     float3 neighborhood1[4], neighborhood2[4];
 #if SMAA_TU4X_PHASE == 0
-    neighborhood1[SMAA_NEIGHBORHOOD_WEST]  = currentColor.rgb;
+    neighborhood1[SMAA_NEIGHBORHOOD_WEST]  = current.rgb;
     neighborhood1[SMAA_NEIGHBORHOOD_EAST]  = SMAASampleLevelZeroPoint(currentColorTex, texcoord + float2(inputPixelSize.x, 0.0)).rgb;
-    neighborhood1[SMAA_NEIGHBORHOOD_NORTH] = SMAASampleLevelZeroPoint(previousColorTex, previousTexcoord - float2(0.0, inputPixelSize.y)).rgb;
-    neighborhood1[SMAA_NEIGHBORHOOD_SOUTH] = previousColor.rgb;
-    neighborhood2[SMAA_NEIGHBORHOOD_WEST]  = SMAASampleLevelZeroPoint(previousColorTex, previousTexcoord - float2(inputPixelSize.x, 0.0)).rgb;
-    neighborhood2[SMAA_NEIGHBORHOOD_EAST]  = previousColor.rgb;
-    neighborhood2[SMAA_NEIGHBORHOOD_NORTH] = currentColor.rgb;
+    neighborhood1[SMAA_NEIGHBORHOOD_NORTH] = SMAASampleLevelZero(previousColorTex, previousTexcoord - float2(0.0, inputPixelSize.y)).rgb;
+    neighborhood1[SMAA_NEIGHBORHOOD_SOUTH] = previous.rgb;
+    neighborhood2[SMAA_NEIGHBORHOOD_WEST]  = SMAASampleLevelZero(previousColorTex, previousTexcoord - float2(inputPixelSize.x, 0.0)).rgb;
+    neighborhood2[SMAA_NEIGHBORHOOD_EAST]  = previous.rgb;
+    neighborhood2[SMAA_NEIGHBORHOOD_NORTH] = current.rgb;
     neighborhood2[SMAA_NEIGHBORHOOD_SOUTH] = SMAASampleLevelZeroPoint(currentColorTex, texcoord + float2(0.0, inputPixelSize.y)).rgb;
 #else
     neighborhood1[SMAA_NEIGHBORHOOD_WEST]  = SMAASampleLevelZeroPoint(currentColorTex, texcoord - float2(inputPixelSize.x, 0.0)).rgb;
-    neighborhood1[SMAA_NEIGHBORHOOD_EAST]  = currentColor.rgb;
-    neighborhood1[SMAA_NEIGHBORHOOD_NORTH] = previousColor.rgb;
-    neighborhood1[SMAA_NEIGHBORHOOD_SOUTH] = SMAASampleLevelZeroPoint(previousColorTex, previousTexcoord + float2(0.0, inputPixelSize.y)).rgb;
-    neighborhood2[SMAA_NEIGHBORHOOD_WEST]  = previousColor.rgb;
-    neighborhood2[SMAA_NEIGHBORHOOD_EAST]  = SMAASampleLevelZeroPoint(previousColorTex, previousTexcoord + float2(inputPixelSize.x, 0.0)).rgb;
+    neighborhood1[SMAA_NEIGHBORHOOD_EAST]  = current.rgb;
+    neighborhood1[SMAA_NEIGHBORHOOD_NORTH] = previous.rgb;
+    neighborhood1[SMAA_NEIGHBORHOOD_SOUTH] = SMAASampleLevelZero(previousColorTex, previousTexcoord + float2(0.0, inputPixelSize.y)).rgb;
+    neighborhood2[SMAA_NEIGHBORHOOD_WEST]  = previous.rgb;
+    neighborhood2[SMAA_NEIGHBORHOOD_EAST]  = SMAASampleLevelZero(previousColorTex, previousTexcoord + float2(inputPixelSize.x, 0.0)).rgb;
     neighborhood2[SMAA_NEIGHBORHOOD_NORTH] = SMAASampleLevelZeroPoint(currentColorTex, texcoord - float2(0.0, inputPixelSize.y)).rgb;
-    neighborhood2[SMAA_NEIGHBORHOOD_SOUTH] = currentColor.rgb;
+    neighborhood2[SMAA_NEIGHBORHOOD_SOUTH] = current.rgb;
 #endif
     float3 weights = SMAADifferentialBlendWeight(neighborhood1, neighborhood2);
-    float3 previousReconstructedColor = SMAADifferentialBlend(neighborhood1, weights);
-    float3 currentReconstructedColor = SMAADifferentialBlend(neighborhood2, weights);
-    previousColor.rgb = lerp(previousColor.rgb, previousReconstructedColor, 0.5);
-    currentColor.rgb = lerp(currentColor.rgb, currentReconstructedColor, 0.5);
+    float3 reconstructed1 = SMAADifferentialBlend(neighborhood1, weights);
+    float3 reconstructed2 = SMAADifferentialBlend(neighborhood2, weights);
+    float4 resolved = 0.5 * (current + previous);
+    resolved.rgb = 0.25 * (current.rgb + previous.rgb + reconstructed1 + reconstructed2);
+
 #if SMAA_REPROJECTION
-    // Attenuate the previous frame when the velocity changed, so that stale
-    // samples are not blended in. This is the same scheme used by the T2x
-    // temporal resolve (see SMAAResolvePS), and it relies on the velocity
-    // being packed in the alpha channel by SMAANeighborhoodBlendingPS.
-    float delta = abs(currentColor.a * currentColor.a - previousColor.a * previousColor.a) / 5.0;
-    float weight = 0.5 * saturate(1.0 - sqrt(delta) * SMAA_REPROJECTION_WEIGHT_SCALE);
-    return lerp(currentColor, previousColor, weight);
+    // Both reconstructed samples depend on history. Fade the whole resolve,
+    // not just the directly sampled previous pixel.
+    return lerp(current, resolved, confidence);
 #else
-    return 0.5 * (currentColor + previousColor);
+    return resolved;
 #endif
 }
 
@@ -1486,8 +1505,7 @@ float4 SMAAResolvePS(float2 texcoord,
     float4 previous = SMAASamplePoint(previousColorTex, texcoord + velocity);
 
     // Attenuate the previous pixel if the velocity is different:
-    float delta = abs(current.a * current.a - previous.a * previous.a) / 5.0;
-    float weight = 0.5 * saturate(1.0 - sqrt(delta) * SMAA_REPROJECTION_WEIGHT_SCALE);
+    float weight = 0.5 * SMAAReprojectionConfidence(current.a, previous.a);
 
     // Blend the pixels according to the calculated weight:
     return lerp(current, previous, weight);
