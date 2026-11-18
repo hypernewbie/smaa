@@ -274,18 +274,30 @@ HRESULT loadMesh(CDXUTSDKMesh &mesh, const wstring &name, const wstring &path) {
 }
 
 
+bool isTemporalMode(int mode) {
+    return mode == SMAA::MODE_SMAA_T2X || mode == SMAA::MODE_SMAA_4X || mode == SMAA::MODE_SMAA_TU4X;
+}
+
+
+void invalidateTU4xHistory() {
+    renderTargetCollection[0].tu4xHistoryValid = false;
+    renderTargetCollection[1].tu4xHistoryValid = false;
+}
+
+
 void setModeControls() {
-    SMAA::Mode mode = SMAA::Mode(int(hud.GetComboBox(IDC_PRIMARY_AA_MODE)->GetSelectedData()));
+    int mode = int(hud.GetComboBox(IDC_PRIMARY_AA_MODE)->GetSelectedData());
+    int secondaryMode = int(hud.GetComboBox(IDC_SECONDARY_AA_MODE)->GetSelectedData());
     bool isSMAA = mode <= SMAA::MODE_SMAA_COUNT;
-    bool isTemporalMode = mode == SMAA::MODE_SMAA_T2X || mode == SMAA::MODE_SMAA_4X || mode == SMAA::MODE_SMAA_TU4X;
-    bool isComparisonMode = hud.GetCheckBox(IDC_COMPARISON_SPLITSCREEN)->GetEnabled() && hud.GetCheckBox(IDC_COMPARISON_SPLITSCREEN)->GetChecked();
+    bool isComparisonMode = isSplitScreenEnabled();
+    bool hasTemporalMode = isTemporalMode(mode) || (isComparisonMode && isTemporalMode(secondaryMode));
 
     hud.GetComboBox(IDC_VIEW_MODE)->SetEnabled(isSMAA);
     hud.GetComboBox(IDC_PRESET)->SetEnabled(isSMAA);
     hud.GetComboBox(IDC_DETECTION_MODE)->SetEnabled(isSMAA);
     hud.GetCheckBox(IDC_SMAA_FILTERING)->SetEnabled(isSMAA);
     hud.GetCheckBox(IDC_PREDICATION)->SetEnabled(isSMAA && inputDepthSRV != nullptr);
-    hud.GetCheckBox(IDC_REPROJECTION)->SetEnabled(isSMAA && isTemporalMode);
+    hud.GetCheckBox(IDC_REPROJECTION)->SetEnabled(hasTemporalMode);
     hud.GetCheckBox(IDC_PROFILE)->SetEnabled(isSMAA && hud.GetComboBox(IDC_LOCK_FRAMERATE)->GetSelectedIndex() == 0 && !isComparisonMode);
     hud.GetSlider(IDC_THRESHOLD)->SetEnabled(isSMAA);
     hud.GetSlider(IDC_MAX_SEARCH_STEPS)->SetEnabled(isSMAA);
@@ -481,8 +493,7 @@ void initSMAA(ID3D10Device *device, const DXGI_SURFACE_DESC *desc) {
     DXUTGetDXGIAdapter()->GetDesc(&adapterDesc); // This seems to be the only reliable way to obtain the adapter in laptops with multiple GPUs, with DXUT
 
     smaa = new SMAA(device, desc->Width, desc->Height, preset, predication, reprojection, &adapterDesc);
-    renderTargetCollection[0].tu4xHistoryValid = false;
-    renderTargetCollection[1].tu4xHistoryValid = false;
+    invalidateTU4xHistory();
     setVisibleCustomControls(preset == SMAA::PRESET_CUSTOM);
 
     int min, max;
@@ -896,6 +907,7 @@ void CALLBACK onFrameRender(ID3D10Device *device, double time, float elapsedTime
 
         // Render the settings dialog:
         if (settingsDialog.IsActive()) {
+            invalidateTU4xHistory();
             settingsDialog.OnRender(elapsedTime);
             return;
         }
@@ -1031,8 +1043,7 @@ void CALLBACK keyboardProc(UINT nchar, bool keyDown, bool altDown, void *context
             fstream f("Movie.txt", fstream::in);
             f >> camera;
             f >> recPlayDuration;
-            renderTargetCollection[0].tu4xHistoryValid = false;
-            renderTargetCollection[1].tu4xHistoryValid = false;
+            invalidateTU4xHistory();
             break;
     }
 }
@@ -1149,6 +1160,10 @@ void CALLBACK onGUIEvent(UINT event, int id, CDXUTControl *control, void *contex
             }
             break;
         }
+        case IDC_SHADING:
+        case IDC_DETECTION_MODE:
+            invalidateTU4xHistory();
+            break;
         case IDC_PRESET:
             if (event == EVENT_COMBOBOX_SELECTION_CHANGED) {
                 SAFE_DELETE(smaa);

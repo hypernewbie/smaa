@@ -29,4 +29,17 @@ If a custom preset is selected, you can:
 
 All the changes done to the loaded images will not modify the original source files.
 
+### Comparing TU4x
+
+Select **Fence**, enable **Comparison Splitscreen**, and choose **SMAA TU4x** and
+**SMAA T2x** in the two AA dropdowns. **Temporal Reprojection** controls motion
+compensation and history rejection on both sides. Turning it off still combines
+the two jittered frames, but without motion compensation.
+
+TU4x also runs when the camera is still. It renders one new sample per pixel
+each frame, reuses the previous frame's opposite jitter phase, and estimates
+the other two samples. The demo averages those four samples back to the
+window resolution; it does not render four independent samples or increase
+the output resolution. Compare thin edges both at rest and during a slow pan.
+
 Enjoy!
