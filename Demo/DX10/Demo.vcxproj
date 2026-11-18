@@ -119,6 +119,7 @@
     <ClCompile Include="..\DXUT\Optional\SDKmesh.cpp" />
     <ClCompile Include="..\DXUT\Optional\SDKmisc.cpp" />
     <ClCompile Include="..\Support\Camera.cpp" />
+    <ClCompile Include="..\Support\CrtCompat.cpp" />
     <ClCompile Include="..\Support\Copy.cpp" />
     <ClCompile Include="Code\SMAA.cpp" />
     <ClCompile Include="Code\Demo.cpp" />

@@ -164,7 +164,9 @@ struct {
 } commandlineOptions = {0.1f, 16, 8, 25.0f, L"", L""};
 
 
-float round(float n) {
+// Named 'roundToInt' because <cmath> now provides a global 'round', which
+// conflicts with the old helper name.
+float roundToInt(float n) {
     return floor(n + 0.5f);
 }
 
@@ -275,7 +277,7 @@ HRESULT loadMesh(CDXUTSDKMesh &mesh, const wstring &name, const wstring &path) {
 void setModeControls() {
     SMAA::Mode mode = SMAA::Mode(int(hud.GetComboBox(IDC_PRIMARY_AA_MODE)->GetSelectedData()));
     bool isSMAA = mode <= SMAA::MODE_SMAA_COUNT;
-    bool isTemporalMode = mode == SMAA::MODE_SMAA_T2X || mode == SMAA::MODE_SMAA_4X;
+    bool isTemporalMode = mode == SMAA::MODE_SMAA_T2X || mode == SMAA::MODE_SMAA_4X || mode == SMAA::MODE_SMAA_TU4X;
     bool isComparisonMode = hud.GetCheckBox(IDC_COMPARISON_SPLITSCREEN)->GetEnabled() && hud.GetCheckBox(IDC_COMPARISON_SPLITSCREEN)->GetChecked();
 
     hud.GetComboBox(IDC_VIEW_MODE)->SetEnabled(isSMAA);
@@ -494,12 +496,12 @@ void initSMAA(ID3D10Device *device, const DXGI_SURFACE_DESC *desc) {
     slider = hud.GetSlider(IDC_MAX_SEARCH_STEPS);
     slider->GetRange(min, max);
     scale = float(slider->GetValue()) / (max - min);
-    smaa->setMaxSearchSteps(int(round(112.0f * scale)));
+    smaa->setMaxSearchSteps(int(roundToInt(112.0f * scale)));
 
     slider = hud.GetSlider(IDC_MAX_SEARCH_STEPS_DIAG);
     slider->GetRange(min, max);
     scale = float(slider->GetValue()) / (max - min);
-    smaa->setMaxSearchStepsDiag(int(round(20.0f * scale)));
+    smaa->setMaxSearchStepsDiag(int(roundToInt(20.0f * scale)));
 
     slider = hud.GetSlider(IDC_CORNER_ROUNDING);
     slider->GetRange(min, max);
@@ -1204,10 +1206,10 @@ void CALLBACK onGUIEvent(UINT event, int id, CDXUTControl *control, void *contex
                 slider->GetRange(min, max);
 
                 float scale = float(slider->GetValue()) / (max - min);
-                smaa->setMaxSearchSteps(int(round(scale * 112.0f)));
+                smaa->setMaxSearchSteps(int(roundToInt(scale * 112.0f)));
 
                 wstringstream s;
-                s << L"Max Search Steps: " << int(round(scale * 112.0f));
+                s << L"Max Search Steps: " << int(roundToInt(scale * 112.0f));
                 hud.GetStatic(IDC_MAX_SEARCH_STEPS_LABEL)->SetText(s.str().c_str());
             }
             break;
@@ -1218,10 +1220,10 @@ void CALLBACK onGUIEvent(UINT event, int id, CDXUTControl *control, void *contex
                 slider->GetRange(min, max);
 
                 float scale = float(slider->GetValue()) / (max - min);
-                smaa->setMaxSearchStepsDiag(int(round(scale * 20.0f)));
+                smaa->setMaxSearchStepsDiag(int(roundToInt(scale * 20.0f)));
 
                 wstringstream s;
-                s << L"Max Diag. Search Steps: " << int(round(scale * 20.0f));
+                s << L"Max Diag. Search Steps: " << int(roundToInt(scale * 20.0f));
                 hud.GetStatic(IDC_MAX_SEARCH_STEPS_DIAG_LABEL)->SetText(s.str().c_str());
             }
             break;

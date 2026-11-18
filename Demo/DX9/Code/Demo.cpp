@@ -90,7 +90,9 @@ bool CALLBACK isDeviceAcceptable(D3DCAPS9 *caps, D3DFORMAT adapterFormat, D3DFOR
         return true;
 }
 
-float round(float n) {
+// Named 'roundToInt' because <cmath> now provides a global 'round', which
+// conflicts with the old helper name.
+float roundToInt(float n) {
     return floor(n + 0.5f);
 }
 
@@ -405,10 +407,10 @@ void CALLBACK onGUIEvent(UINT event, int controlId, CDXUTControl* control, void 
                 slider->GetRange(min, max);
 
                 float scale = float(slider->GetValue()) / (max - min);
-                smaa->setMaxSearchSteps(int(round(scale * 112.0f)));
+                smaa->setMaxSearchSteps(int(roundToInt(scale * 112.0f)));
 
                 wstringstream s;
-                s << L"Max Search Steps: " << int(round(scale * 112.0f));
+                s << L"Max Search Steps: " << int(roundToInt(scale * 112.0f));
                 hud.GetStatic(IDC_MAX_SEARCH_STEPS_LABEL)->SetText(s.str().c_str());
             }
             break;
@@ -419,10 +421,10 @@ void CALLBACK onGUIEvent(UINT event, int controlId, CDXUTControl* control, void 
                 slider->GetRange(min, max);
 
                 float scale = float(slider->GetValue()) / (max - min);
-                smaa->setMaxSearchStepsDiag(int(round(scale * 20.0f)));
+                smaa->setMaxSearchStepsDiag(int(roundToInt(scale * 20.0f)));
 
                 wstringstream s;
-                s << L"Max Diag. Search Steps: " << int(round(scale * 20.0f));
+                s << L"Max Diag. Search Steps: " << int(roundToInt(scale * 20.0f));
                 hud.GetStatic(IDC_MAX_SEARCH_STEPS_DIAG_LABEL)->SetText(s.str().c_str());
             }
             break;

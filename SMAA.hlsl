@@ -293,6 +293,10 @@
  *    and the one you saved last frame. If there's no valid sample at the
  *    reprojected coordinates, use the current frame's color instead.
  *
+ * 4. Temporal reprojection (SMAA_REPROJECTION) is supported as well: the
+ *    previous frame is attenuated when the velocity changed, the same way it
+ *    is done for SMAA T2x (see SMAAResolvePS).
+ *
  * f) If motion blur is used, you may want to do the edge detection pass
  *    together with motion blur. This has two advantages:
  *
@@ -1447,7 +1451,17 @@ float4 SMAATU4xResolvePS(float2 texcoord,
     float3 currentReconstructedColor = SMAADifferentialBlend(neighborhood2, weights);
     previousColor.rgb = lerp(previousColor.rgb, previousReconstructedColor, 0.5);
     currentColor.rgb = lerp(currentColor.rgb, currentReconstructedColor, 0.5);
+#if SMAA_REPROJECTION
+    // Attenuate the previous frame when the velocity changed, so that stale
+    // samples are not blended in. This is the same scheme used by the T2x
+    // temporal resolve (see SMAAResolvePS), and it relies on the velocity
+    // being packed in the alpha channel by SMAANeighborhoodBlendingPS.
+    float delta = abs(currentColor.a * currentColor.a - previousColor.a * previousColor.a) / 5.0;
+    float weight = 0.5 * saturate(1.0 - sqrt(delta) * SMAA_REPROJECTION_WEIGHT_SCALE);
+    return lerp(currentColor, previousColor, weight);
+#else
     return 0.5 * (currentColor + previousColor);
+#endif
 }
 
 //-----------------------------------------------------------------------------

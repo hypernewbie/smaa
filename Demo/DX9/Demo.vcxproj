@@ -154,6 +154,7 @@
     <ClCompile Include="..\DXUT\Optional\SDKmesh.cpp" />
     <ClCompile Include="..\DXUT\Optional\SDKmisc.cpp" />
     <ClCompile Include="..\Support\Timer.cpp" />
+    <ClCompile Include="..\Support\CrtCompat.cpp" />
     <ClCompile Include="Code\Demo.cpp" />
     <ClCompile Include="Code\SMAA.cpp" />
   </ItemGroup>
