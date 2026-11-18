@@ -1311,6 +1311,60 @@ float4 SMAANeighborhoodBlendingPS(float2 texcoord,
 }
 
 //-----------------------------------------------------------------------------
+// Temporal Upsampling (Optional)
+
+#ifndef SMAA_NEIGHBORHOOD_WEST
+#define SMAA_NEIGHBORHOOD_WEST  0
+#define SMAA_NEIGHBORHOOD_EAST  1
+#define SMAA_NEIGHBORHOOD_NORTH 2
+#define SMAA_NEIGHBORHOOD_SOUTH 3
+#endif
+
+#ifndef SMAA_LUMA_FAST
+#define SMAA_LUMA_FAST(c) dot((c), float3(0.2126, 0.7152, 0.0722))
+#endif
+
+#if (defined(SMAA_GLSL_3) || defined(SMAA_GLSL_4)) && !defined(rcp)
+#define rcp(x) (1.0 / (x))
+#define SMAA_TU_UNDEF_RCP
+#endif
+
+/**
+ * The input colors must be in linear light.
+ * From Jorge Jimenez's Dynamic Temporal Antialiasing presentation, slide 37.
+ */
+float3 SMAADifferentialBlendWeight(float3 neighborhood1[4],
+                                   float3 neighborhood2[4]) {
+    float2 deltaH = float2(
+        SMAA_LUMA_FAST(abs(neighborhood1[SMAA_NEIGHBORHOOD_WEST] -
+                           neighborhood1[SMAA_NEIGHBORHOOD_EAST])),
+        SMAA_LUMA_FAST(abs(neighborhood2[SMAA_NEIGHBORHOOD_WEST] -
+                           neighborhood2[SMAA_NEIGHBORHOOD_EAST]))
+    );
+
+    float2 deltaV = float2(
+        SMAA_LUMA_FAST(abs(neighborhood1[SMAA_NEIGHBORHOOD_NORTH] -
+                           neighborhood1[SMAA_NEIGHBORHOOD_SOUTH])),
+        SMAA_LUMA_FAST(abs(neighborhood2[SMAA_NEIGHBORHOOD_NORTH] -
+                           neighborhood2[SMAA_NEIGHBORHOOD_SOUTH]))
+    );
+
+    float3 weights;
+    weights.xy = float2(
+        max(deltaV.x, 1e-3) * max(deltaV.y, 1e-3),
+        max(deltaH.x, 1e-3) * max(deltaH.y, 1e-3)
+    );
+    weights.z = rcp(weights.x + weights.y);
+
+    return weights;
+}
+
+#ifdef SMAA_TU_UNDEF_RCP
+#undef rcp
+#undef SMAA_TU_UNDEF_RCP
+#endif
+
+//-----------------------------------------------------------------------------
 // Temporal Resolve Pixel Shader (Optional Pass)
 
 float4 SMAAResolvePS(float2 texcoord,
