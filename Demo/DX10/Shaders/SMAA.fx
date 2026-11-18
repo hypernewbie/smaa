@@ -38,7 +38,7 @@ float4 subsampleIndices;
  * 1.0 (no blending).
  */
 float blendFactor;
-float neighborhoodBlendingStrength = 1.0;
+bool tu4xSpatial;
 float4 tu4xBounds;
 
 /**
@@ -70,7 +70,11 @@ float cornerRounding;
 #endif
 
 // And include our header!
-#define SMAA_NEIGHBORHOOD_BLENDING_STRENGTH neighborhoodBlendingStrength
+#define SMAA_NEIGHBORHOOD_BLENDING_STRENGTH (tu4xSpatial ? 0.5 : 1.0)
+#define SMAA_LOCAL_CONTRAST_ADAPTATION_FACTOR (tu4xSpatial ? 1.5 : 2.0)
+#if defined(SMAA_PRESET_HIGH)
+#define SMAA_THRESHOLD (tu4xSpatial ? 0.2 : 0.1)
+#endif
 #include "SMAA.hlsl"
 
 // Set pixel shader version accordingly:
@@ -232,10 +236,15 @@ float4 DX10_SMAAResolvePS(float4 position : SV_POSITION,
 
 float4 DX10_SMAATU4xResolvePS(float4 position : SV_POSITION,
                               float2 texcoord : TEXCOORD0) : SV_TARGET {
-    if (all(texcoord >= tu4xBounds.xy) && all(texcoord < tu4xBounds.zw)) {
-        float2 velocity = SMAA_DECODE_VELOCITY(SMAASampleLevelZeroPoint(velocityTex, texcoord));
-        float2 previousTexcoord = texcoord - velocity;
-        if (all(previousTexcoord >= tu4xBounds.xy) && all(previousTexcoord < tu4xBounds.zw))
+    SMAA_BRANCH
+    if (all(texcoord >= tu4xBounds.xy) && all(texcoord <= tu4xBounds.zw)) {
+        float2 previousTexcoord = texcoord;
+        #if SMAA_REPROJECTION
+        previousTexcoord -= SMAA_DECODE_VELOCITY(SMAASampleLevelZeroPoint(velocityTex, texcoord));
+        #endif
+        SMAA_BRANCH
+        if (all(previousTexcoord >= tu4xBounds.xy) && all(previousTexcoord <= tu4xBounds.zw) &&
+            all(previousTexcoord < 1.0))
             return SMAATU4xResolvePS(texcoord, previousTexcoord, SMAA_RT_METRICS.xy, colorTex, colorTexPrev);
     }
     return SMAASampleLevelZeroPoint(colorTex, texcoord);

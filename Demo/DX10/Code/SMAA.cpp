@@ -292,7 +292,7 @@ void SMAA::go(ID3D10ShaderResourceView *srcGammaSRV,
         V(maxSearchStepsDiagVariable->SetFloat(float(maxSearchStepsDiag)));
     }
     V(blendFactorVariable->SetFloat(pass == 0? 1.0f : 0.5f));
-    V(effect->GetVariableByName("neighborhoodBlendingStrength")->AsScalar()->SetFloat(mode == MODE_SMAA_TU4X? 0.5f : 1.0f));
+    V(effect->GetVariableByName("tu4xSpatial")->AsScalar()->SetBool(mode == MODE_SMAA_TU4X));
 
     V(edgesTexVariable->SetResource(*edgesRT));
     V(blendTexVariable->SetResource(*blendRT));
@@ -354,11 +354,13 @@ void SMAA::reproject(ID3D10ShaderResourceView *currentSRV,
             D3D10_RECT fullRect = { 0, 0, width, height };
             const D3D10_RECT &rect = count > 0? rects[0] : fullRect;
 
-            // Keep the one-pixel gather inside the split-screen rectangle.
-            bounds[0] = float(rect.left + (rect.left > 0)) / width;
-            bounds[1] = float(rect.top + (rect.top > 0)) / height;
-            bounds[2] = float(rect.right - (rect.right < width)) / width;
-            bounds[3] = float(rect.bottom - (rect.bottom < height)) / height;
+            // At a split-screen seam, keep the one-pixel gather plus the
+            // half-texel footprint of linear history sampling on our side.
+            const float margin = 1.5f;
+            bounds[0] = (rect.left   + (rect.left   > 0      ? margin : 0.0f)) / width;
+            bounds[1] = (rect.top    + (rect.top    > 0      ? margin : 0.0f)) / height;
+            bounds[2] = (rect.right  - (rect.right  < width  ? margin : 0.0f)) / width;
+            bounds[3] = (rect.bottom - (rect.bottom < height ? margin : 0.0f)) / height;
         }
         V(resolveEffect->GetVariableByName("tu4xBounds")->AsVector()->SetFloatVector(bounds));
     }
