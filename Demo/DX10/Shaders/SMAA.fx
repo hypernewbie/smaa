@@ -236,15 +236,12 @@ float4 DX10_SMAAResolvePS(float4 position : SV_POSITION,
 
 float4 DX10_SMAATU4xResolvePS(float4 position : SV_POSITION,
                               float2 texcoord : TEXCOORD0) : SV_TARGET {
-    SMAA_BRANCH
-    if (all(texcoord >= tu4xBounds.xy) && all(texcoord <= tu4xBounds.zw)) {
+    if (all(texcoord >= tu4xBounds.xy) && all(texcoord < tu4xBounds.zw)) {
         float2 previousTexcoord = texcoord;
         #if SMAA_REPROJECTION
         previousTexcoord -= SMAA_DECODE_VELOCITY(SMAASampleLevelZeroPoint(velocityTex, texcoord));
         #endif
-        SMAA_BRANCH
-        if (all(previousTexcoord >= tu4xBounds.xy) && all(previousTexcoord <= tu4xBounds.zw) &&
-            all(previousTexcoord < 1.0))
+        if (all(previousTexcoord >= tu4xBounds.xy) && all(previousTexcoord < tu4xBounds.zw))
             return SMAATU4xResolvePS(texcoord, previousTexcoord, SMAA_RT_METRICS.xy, colorTex, colorTexPrev);
     }
     return SMAASampleLevelZeroPoint(colorTex, texcoord);
