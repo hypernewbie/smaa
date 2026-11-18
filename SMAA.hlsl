@@ -383,6 +383,7 @@
 
 /**
  * SMAA_CORNER_ROUNDING specifies how much sharp corners will be rounded.
+ * Note that 100 disables corner attenuation, while 0 applies it fully.
  *
  * Range: [0, 100]
  *
