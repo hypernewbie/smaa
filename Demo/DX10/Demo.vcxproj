@@ -152,8 +152,7 @@
       <Command Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">fxc /Tfx_4_0 /Ges /nologo /I ../.. /Fo"$(IntDir)%(Filename).fxo"  /Fc"$(IntDir)%(Filename).asm" "%(FullPath)"
 </Command>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">$(IntDir)%(Filename).fxo</Outputs>
-      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">..\..\SMAA.h</AdditionalInputs>
-      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">..\..\SMAA.h</AdditionalInputs>
+      <AdditionalInputs>..\..\SMAA.hlsl;%(AdditionalInputs)</AdditionalInputs>
     </CustomBuild>
     <CustomBuild Include="Shaders\Simple.fx">
       <Command Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">fxc /Od /Zi /Tfx_4_0 /nologo /I ../.. /Fo"$(IntDir)%(Filename).fxo" /Fc"$(IntDir)%(Filename).asm" "%(FullPath)"
@@ -168,11 +167,10 @@
     <ResourceCompile Include="Demo.rc">
       <Command Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">rc /d "INT_DIR=$(IntDir)" /d "_VC80_UPGRADE=0x0710" /d "_UNICODE" /d "UNICODE" /fo"$(IntDir)%(Filename).res" "%(FullPath)"
 </Command>
-      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">$(IntDir)Antialiasing.fxo;$(IntDir)Main1.fxo;%(AdditionalInputs)</AdditionalInputs>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">$(IntDir)%(Filename).res;%(Outputs)</Outputs>
       <Command Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">rc /d "INT_DIR=$(IntDir)" /d "_VC80_UPGRADE=0x0710" /d "_UNICODE" /d "UNICODE" /fo"$(IntDir)%(Filename).res" "%(FullPath)"
 </Command>
-      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">$(IntDir)Antialiasing.fxo;$(IntDir)Main1.fxo;%(AdditionalInputs)</AdditionalInputs>
+      <AdditionalInputs>..\..\SMAA.hlsl;Shaders\SMAA.fx;Shaders\Simple.fx;%(AdditionalInputs)</AdditionalInputs>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">$(IntDir)%(Filename).res;%(Outputs)</Outputs>
       <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">$(IntDir)</AdditionalIncludeDirectories>
       <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">$(IntDir)</AdditionalIncludeDirectories>
