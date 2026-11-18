@@ -931,7 +931,8 @@ float2 SMAACalculateDiagWeights(SMAATexture2D(edgesTex), SMAATexture2D(areaTex),
     d.yw = SMAASearchDiag1(SMAATexturePass2D(edgesTex), texcoord, float2(1.0, -1.0), end);
 
     SMAA_BRANCH
-    if (d.x + d.y > 2.0) { // d.x + d.y + 1 > 3
+    if (d.x + d.y > 2.0 &&
+        (!(d.z < 0.9) || !(d.w < 0.9))) { // d.x + d.y + 1 > 3, one or both ends missing
         // Fetch the crossing edges:
         float4 coords = mad(float4(-d.x + 0.25, d.x, d.y, -d.y - 0.25), SMAA_RT_METRICS.xyxy, texcoord.xyxy);
         float4 c;
@@ -966,7 +967,8 @@ float2 SMAACalculateDiagWeights(SMAATexture2D(edgesTex), SMAATexture2D(areaTex),
         d.yw = float2(0.0, 0.0);
 
     SMAA_BRANCH
-    if (d.x + d.y > 2.0) { // d.x + d.y + 1 > 3
+    if (d.x + d.y > 2.0 &&
+        (!(d.z < 0.9) || !(d.w < 0.9))) { // d.x + d.y + 1 > 3, one or both ends missing
         // Fetch the crossing edges:
         float4 coords = mad(float4(-d.x, -d.x, d.y, d.y), SMAA_RT_METRICS.xyxy, texcoord.xyxy);
         float4 c;
