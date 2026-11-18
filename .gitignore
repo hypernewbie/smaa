@@ -18,3 +18,5 @@ Demo/DX10/Demo.vcxproj.user
 
 Scripts/*.pyc
 Scripts/*.tga
+
+/temp/
