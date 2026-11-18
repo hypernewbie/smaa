@@ -279,7 +279,21 @@
  *    indices), previous frame must be reprojected as in SMAA T2x mode (see
  *    point b).
  *
- * e) If motion blur is used, you may want to do the edge detection pass
+ * e) If you want to enable temporal upsampling (SMAA TU4x):
+ *
+ * 1. Alternate between the northwest and southeast sample positions, a
+ *    quarter pixel from the center along each axis. Compile the resolve
+ *    with SMAA_TU4X_PHASE set to 0 for northwest and 1 for southeast.
+ *
+ * 2. Apply SMAA to each frame with 'subsampleIndices' set to zero and
+ *    SMAA_NEIGHBORHOOD_BLENDING_STRENGTH set to 0.5. Save the result of
+ *    neighborhood blending for the next frame, before the temporal resolve.
+ *
+ * 3. Call SMAATU4xResolvePS with this frame's neighborhood blending result
+ *    and the one you saved last frame. If there's no valid sample at the
+ *    reprojected coordinates, use the current frame's color instead.
+ *
+ * f) If motion blur is used, you may want to do the edge detection pass
  *    together with motion blur. This has two advantages:
  *
  * 1. Pixels under heavy motion can be omitted from the edge detection process.
@@ -1399,7 +1413,8 @@ float3 SMAADifferentialBlend(float3 neighborhood[4], float3 weights) {
     return (0.5 * weights.z) * color.rgb;
 }
 
-// previousTexcoord is reprojected; both textures use point-clamp sampling.
+// 'previousTexcoord' is the current pixel's position in the previous frame,
+// calculated without the subpixel jitter.
 float4 SMAATU4xResolvePS(float2 texcoord,
                          float2 previousTexcoord,
                          float2 inputPixelSize,
