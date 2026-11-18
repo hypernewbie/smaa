@@ -482,6 +482,14 @@
 #define SMAA_REPROJECTION_WEIGHT_SCALE 30.0
 #endif
 
+// 0: current sample NW; 1: current sample SE. Select the matching shader each frame.
+#ifndef SMAA_TU4X_PHASE
+#define SMAA_TU4X_PHASE 0
+#endif
+#if SMAA_TU4X_PHASE != 0 && SMAA_TU4X_PHASE != 1
+#error SMAA_TU4X_PHASE must be 0 or 1
+#endif
+
 /**
  * On some compilers, discard cannot be used in vertex shaders. Thus, they need
  * to be compiled separately.
@@ -1371,6 +1379,36 @@ float3 SMAADifferentialBlend(float3 neighborhood[4], float3 weights) {
     color += float4(neighborhood[SMAA_NEIGHBORHOOD_WEST]  + neighborhood[SMAA_NEIGHBORHOOD_EAST],  1.0) * weights.x;
     color += float4(neighborhood[SMAA_NEIGHBORHOOD_NORTH] + neighborhood[SMAA_NEIGHBORHOOD_SOUTH], 1.0) * weights.y;
     return (0.5 * weights.z) * color.rgb;
+}
+
+// X/Y neighbors are sampled toward the opposite phase.
+void SMAATU4xNeighborhoods(float3 current,
+                           float3 currentX,
+                           float3 currentY,
+                           float3 previous,
+                           float3 previousX,
+                           float3 previousY,
+                           out float3 neighborhood1[4],
+                           out float3 neighborhood2[4]) {
+#if SMAA_TU4X_PHASE == 0
+    neighborhood1[SMAA_NEIGHBORHOOD_WEST]  = current;
+    neighborhood1[SMAA_NEIGHBORHOOD_EAST]  = currentX;
+    neighborhood1[SMAA_NEIGHBORHOOD_NORTH] = previousY;
+    neighborhood1[SMAA_NEIGHBORHOOD_SOUTH] = previous;
+    neighborhood2[SMAA_NEIGHBORHOOD_WEST]  = previousX;
+    neighborhood2[SMAA_NEIGHBORHOOD_EAST]  = previous;
+    neighborhood2[SMAA_NEIGHBORHOOD_NORTH] = current;
+    neighborhood2[SMAA_NEIGHBORHOOD_SOUTH] = currentY;
+#else
+    neighborhood1[SMAA_NEIGHBORHOOD_WEST]  = currentX;
+    neighborhood1[SMAA_NEIGHBORHOOD_EAST]  = current;
+    neighborhood1[SMAA_NEIGHBORHOOD_NORTH] = previous;
+    neighborhood1[SMAA_NEIGHBORHOOD_SOUTH] = previousY;
+    neighborhood2[SMAA_NEIGHBORHOOD_WEST]  = previous;
+    neighborhood2[SMAA_NEIGHBORHOOD_EAST]  = previousX;
+    neighborhood2[SMAA_NEIGHBORHOOD_NORTH] = currentY;
+    neighborhood2[SMAA_NEIGHBORHOOD_SOUTH] = current;
+#endif
 }
 
 // Pair neighborhood1 with previousColor, and neighborhood2 with currentColor.
