@@ -400,9 +400,11 @@
  * This allows to eliminate spurious crossing edges, and is based on the fact
  * that, if there is too much contrast in a direction, that will hide
  * perceptually contrast in the other neighbors.
+ *
+ * Assumes temporal upsampling. For spatial-only SMAA, use 2.0.
  */
 #ifndef SMAA_LOCAL_CONTRAST_ADAPTATION_FACTOR
-#define SMAA_LOCAL_CONTRAST_ADAPTATION_FACTOR 2.0
+#define SMAA_LOCAL_CONTRAST_ADAPTATION_FACTOR 1.5
 #endif
 
 /**
