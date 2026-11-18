@@ -1329,10 +1329,7 @@ float4 SMAANeighborhoodBlendingPS(float2 texcoord,
 #define SMAA_TU_UNDEF_RCP
 #endif
 
-/**
- * The input colors must be in linear light.
- * From Jorge Jimenez's Dynamic Temporal Antialiasing presentation, slide 37.
- */
+// From Jorge Jimenez's Dynamic Temporal Antialiasing presentation, slide 37.
 float3 SMAADifferentialBlendWeight(float3 neighborhood1[4],
                                    float3 neighborhood2[4]) {
     float2 deltaH = float2(
@@ -1374,6 +1371,18 @@ float3 SMAADifferentialBlend(float3 neighborhood[4], float3 weights) {
     color += float4(neighborhood[SMAA_NEIGHBORHOOD_WEST]  + neighborhood[SMAA_NEIGHBORHOOD_EAST],  1.0) * weights.x;
     color += float4(neighborhood[SMAA_NEIGHBORHOOD_NORTH] + neighborhood[SMAA_NEIGHBORHOOD_SOUTH], 1.0) * weights.y;
     return (0.5 * weights.z) * color.rgb;
+}
+
+// Pair neighborhood1 with previousColor, and neighborhood2 with currentColor.
+void SMAADifferentialBlendPair(float3 neighborhood1[4],
+                               float3 neighborhood2[4],
+                               inout float3 currentColor,
+                               inout float3 previousColor) {
+    float3 weights = SMAADifferentialBlendWeight(neighborhood1, neighborhood2);
+    float3 previousReconstructedColor = SMAADifferentialBlend(neighborhood1, weights);
+    float3 currentReconstructedColor = SMAADifferentialBlend(neighborhood2, weights);
+    previousColor = lerp(previousColor, previousReconstructedColor, 0.5);
+    currentColor  = lerp(currentColor,  currentReconstructedColor,  0.5);
 }
 
 //-----------------------------------------------------------------------------
