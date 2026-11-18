@@ -172,6 +172,9 @@ SMAA::SMAA(ID3D10Device *device, int width, int height, Preset preset, bool pred
     ID3D10IncludeResource includeResource;
     string profile = dx10_1? "fx_4_1" : "fx_4_0";
     V(D3DX10CreateEffectFromResource(GetModuleHandle(nullptr), L"SMAA.fx", nullptr, &defines.front(), &includeResource, profile.c_str(), flags, 0, device, nullptr, nullptr, &effect, nullptr, nullptr));
+    D3D10_SHADER_MACRO tu4xPhaseMacro = { "SMAA_TU4X_PHASE", "1" };
+    defines.insert(defines.end() - 1, tu4xPhaseMacro);
+    V(D3DX10CreateEffectFromResource(GetModuleHandle(nullptr), L"SMAA.fx", nullptr, &defines.front(), &includeResource, profile.c_str(), flags, 0, device, nullptr, nullptr, &tu4xEffectSE, nullptr, nullptr));
 
     // This is for rendering the typical fullscreen quad later on:
     D3D10_PASS_DESC desc;
@@ -232,6 +235,7 @@ SMAA::SMAA(ID3D10Device *device, int width, int height, Preset preset, bool pred
 
 SMAA::~SMAA() {
     SAFE_RELEASE(effect);
+    SAFE_RELEASE(tu4xEffectSE);
     SAFE_DELETE(triangle);
     SAFE_DELETE(edgesRT);
     SAFE_DELETE(blendRT);
@@ -255,7 +259,7 @@ void SMAA::go(ID3D10ShaderResourceView *srcGammaSRV,
 
     PerfEventScope perfEvent(L"SMAA: Morphological Antialiasing");
 
-    assert(((mode == MODE_SMAA_1X  || mode == MODE_SMAA_T2X) &&  pass == 0) ||
+    assert(((mode == MODE_SMAA_1X || mode == MODE_SMAA_T2X || mode == MODE_SMAA_TU4X) && pass == 0) ||
            ((mode == MODE_SMAA_S2X || mode == MODE_SMAA_4X)  && (pass == 0  || pass == 1)));
 
     // Save the state:
@@ -288,6 +292,7 @@ void SMAA::go(ID3D10ShaderResourceView *srcGammaSRV,
         V(maxSearchStepsDiagVariable->SetFloat(float(maxSearchStepsDiag)));
     }
     V(blendFactorVariable->SetFloat(pass == 0? 1.0f : 0.5f));
+    V(effect->GetVariableByName("neighborhoodBlendingStrength")->AsScalar()->SetFloat(mode == MODE_SMAA_TU4X? 0.5f : 1.0f));
 
     V(edgesTexVariable->SetResource(*edgesRT));
     V(blendTexVariable->SetResource(*blendRT));
@@ -316,7 +321,8 @@ void SMAA::go(ID3D10ShaderResourceView *srcGammaSRV,
 void SMAA::reproject(ID3D10ShaderResourceView *currentSRV,
                      ID3D10ShaderResourceView *previousSRV,
                      ID3D10ShaderResourceView *velocitySRV,
-                     ID3D10RenderTargetView *dstRTV) {
+                     ID3D10RenderTargetView *dstRTV,
+                     Mode mode) {
     HRESULT hr;
 
     PerfEventScope perfEvent(L"SMAA: Temporal Antialiasing");
@@ -332,13 +338,34 @@ void SMAA::reproject(ID3D10ShaderResourceView *currentSRV,
     edgesRT->setViewport();
     triangle->setInputLayout();
 
-    // Setup variables:
-    V(colorTexVariable->SetResource(currentSRV));
-    V(colorTexPrevVariable->SetResource(previousSRV));
-    V(velocityTexVariable->SetResource(velocitySRV));
+    bool tu4x = mode == MODE_SMAA_TU4X;
+    ID3D10Effect *resolveEffect = tu4x && frameIndex == 1? tu4xEffectSE : effect;
+    ID3D10EffectPass *pass = (tu4x? resolveEffect->GetTechniqueByName("TU4xResolve") : resolveTechnique)->GetPassByIndex(0);
+    ID3D10EffectShaderResourceVariable *current = resolveEffect == effect? colorTexVariable : resolveEffect->GetVariableByName("colorTex")->AsShaderResource();
+    ID3D10EffectShaderResourceVariable *previous = resolveEffect == effect? colorTexPrevVariable : resolveEffect->GetVariableByName("colorTexPrev")->AsShaderResource();
+    ID3D10EffectShaderResourceVariable *velocity = resolveEffect == effect? velocityTexVariable : resolveEffect->GetVariableByName("velocityTex")->AsShaderResource();
 
-    // Select the technique accordingly:
-    V(resolveTechnique->GetPassByIndex(0)->Apply(0));
+    if (tu4x) {
+        float bounds[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+        if (previousSRV != nullptr) {
+            D3D10_RECT rects[D3D10_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE];
+            UINT count = D3D10_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE;
+            device->RSGetScissorRects(&count, rects);
+            D3D10_RECT fullRect = { 0, 0, width, height };
+            const D3D10_RECT &rect = count > 0? rects[0] : fullRect;
+
+            // Keep the one-pixel gather inside the split-screen rectangle.
+            bounds[0] = float(rect.left + (rect.left > 0)) / width;
+            bounds[1] = float(rect.top + (rect.top > 0)) / height;
+            bounds[2] = float(rect.right - (rect.right < width)) / width;
+            bounds[3] = float(rect.bottom - (rect.bottom < height)) / height;
+        }
+        V(resolveEffect->GetVariableByName("tu4xBounds")->AsVector()->SetFloatVector(bounds));
+    }
+    V(current->SetResource(currentSRV));
+    V(previous->SetResource(previousSRV));
+    V(velocity->SetResource(velocitySRV));
+    V(pass->Apply(0));
 
     // Do it!
     device->OMSetRenderTargets(1, &dstRTV, nullptr);
@@ -346,10 +373,10 @@ void SMAA::reproject(ID3D10ShaderResourceView *currentSRV,
     device->OMSetRenderTargets(0, nullptr, nullptr);
 
     // Reset external inputs, to avoid warnings:
-    V(colorTexVariable->SetResource(nullptr));
-    V(colorTexPrevVariable->SetResource(nullptr));
-    V(velocityTexVariable->SetResource(nullptr));
-    V(resolveTechnique->GetPassByIndex(0)->Apply(0));
+    V(current->SetResource(nullptr));
+    V(previous->SetResource(nullptr));
+    V(velocity->SetResource(nullptr));
+    V(pass->Apply(0));
 }
 
 
@@ -512,6 +539,7 @@ void SMAA::blendingWeightsCalculationPass(ID3D10DepthStencilView *dsv, Mode mode
      */
 
     switch (mode) {
+        case MODE_SMAA_TU4X:
         case MODE_SMAA_1X: {
             float indices[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
             V(subsampleIndicesVariable->SetFloatVector(indices));
@@ -682,6 +710,14 @@ D3DXVECTOR2 SMAA::getJitter(Mode mode) const {
             };
             return jitters[frameIndex];
         }
+        case SMAA::MODE_SMAA_TU4X: {
+            // Moving the projection southeast samples northwest, and vice versa.
+            D3DXVECTOR2 jitters[] = {
+                D3DXVECTOR2( 0.25f, -0.25f),
+                D3DXVECTOR2(-0.25f,  0.25f)
+            };
+            return jitters[frameIndex];
+        }
         case SMAA::MODE_SMAA_4X: {
             D3DXVECTOR2 jitters[] = {
                 D3DXVECTOR2(-0.125f, -0.125f),
@@ -697,6 +733,7 @@ D3DXVECTOR2 SMAA::getJitter(Mode mode) const {
 
 int SMAA::getSubsampleIndex(Mode mode, int pass) const {
     switch (mode) {
+        case SMAA::MODE_SMAA_TU4X:
         case SMAA::MODE_SMAA_1X:
             return 0;
         case SMAA::MODE_SMAA_T2X:

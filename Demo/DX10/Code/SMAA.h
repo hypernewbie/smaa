@@ -46,7 +46,7 @@ class SMAA {
     public:
         class ExternalStorage;
 
-        enum Mode { MODE_SMAA_1X, MODE_SMAA_T2X, MODE_SMAA_S2X, MODE_SMAA_4X, MODE_SMAA_COUNT=MODE_SMAA_4X };
+        enum Mode { MODE_SMAA_1X, MODE_SMAA_T2X, MODE_SMAA_S2X, MODE_SMAA_4X, MODE_SMAA_TU4X, MODE_SMAA_COUNT=MODE_SMAA_TU4X };
         enum Preset { PRESET_LOW, PRESET_MEDIUM, PRESET_HIGH, PRESET_ULTRA, PRESET_CUSTOM, PRESET_COUNT=PRESET_CUSTOM };
         enum Input { INPUT_LUMA, INPUT_COLOR, INPUT_DEPTH, INPUT_COUNT=INPUT_DEPTH };
 
@@ -96,12 +96,14 @@ class SMAA {
 
         /**
          * This function perform a temporal resolve of two buffers. They must
-         * contain temporary jittered color subsamples.
+         * contain temporary jittered color subsamples. In TU4x mode, pass
+         * nullptr for previousSRV when there is no valid history.
          */
         void reproject(ID3D10ShaderResourceView *currentSRV,
                        ID3D10ShaderResourceView *previousSRV,
                        ID3D10ShaderResourceView *velocitySRV,
-                       ID3D10RenderTargetView *dstRTV);
+                       ID3D10RenderTargetView *dstRTV,
+                       Mode mode=MODE_SMAA_T2X);
 
         /**
          * This function separates 2 subsamples in a 2x multisampled buffer
@@ -217,7 +219,7 @@ class SMAA {
         ID3D10Device *device;
         int width, height;
         Preset preset;
-        ID3D10Effect *effect;
+        ID3D10Effect *effect, *tu4xEffectSE;
         FullscreenTriangle *triangle;
 
         RenderTarget *edgesRT;

@@ -101,6 +101,7 @@ struct RenderTargetCollection {
     RenderTarget *tmpRT_SRGB[2];
 
     RenderTarget *previousRT[2];
+    bool tu4xHistoryValid;
 
     // This render target is to ensure we read from a 32-bit depth buffer (to properly measure):
     RenderTarget *depthRT;
@@ -138,6 +139,7 @@ MSAAMode msaaModes[] = {
     {L"SMAA T2x",   {1,  0}, 0x0000}, // MODE_SMAA_T2X
     {L"SMAA S2x",   {2,  0}, 0x0000}, // MODE_SMAA_S2X
     {L"SMAA 4x",    {2,  0}, 0x0000}, // MODE_SMAA_4X
+    {L"SMAA TU4x",  {1,  0}, 0x0000}, // MODE_SMAA_TU4X
     {L"MSAA 1x",    {1,  0}, 0x0000},
     {L"MSAA 2x",    {2,  0}, 0x0000},
     {L"MSAA 4x",    {4,  0}, 0x0000},
@@ -477,6 +479,8 @@ void initSMAA(ID3D10Device *device, const DXGI_SURFACE_DESC *desc) {
     DXUTGetDXGIAdapter()->GetDesc(&adapterDesc); // This seems to be the only reliable way to obtain the adapter in laptops with multiple GPUs, with DXUT
 
     smaa = new SMAA(device, desc->Width, desc->Height, preset, predication, reprojection, &adapterDesc);
+    renderTargetCollection[0].tu4xHistoryValid = false;
+    renderTargetCollection[1].tu4xHistoryValid = false;
     setVisibleCustomControls(preset == SMAA::PRESET_CUSTOM);
 
     int min, max;
@@ -642,6 +646,9 @@ void renderScene(ID3D10Device *device, RenderTargetCollection &rtc, int mode) {
     bool smaaEnabled = hud.GetCheckBox(IDC_SMAA_FILTERING)->GetChecked() &&
                        mode <= SMAA::MODE_SMAA_COUNT;
 
+    bool resetHistory = mode == SMAA::MODE_SMAA_TU4X && !rtc.tu4xHistoryValid;
+    const D3DXMATRIX &previousViewProj = resetHistory? currViewProj : prevViewProj;
+
     // Render the grid:
     for (float x = -20.0; x <= 20.0; x += 1.0) {
         for (float y = -20.0; y <= 20.0; y += 1.0) {
@@ -649,9 +656,10 @@ void renderScene(ID3D10Device *device, RenderTargetCollection &rtc, int mode) {
             D3DXMatrixTranslation(&world, x, y, 0.0f);
 
             D3DXMATRIX currWorldViewProj = world * currViewProj;
-            D3DXMATRIX prevWorldViewProj = world * prevViewProj;
+            D3DXMATRIX prevWorldViewProj = world * previousViewProj;
 
             if (smaaEnabled) {
+                // Use the same jitter in both transforms so velocity measures motion between pixel grids.
                 currWorldViewProj = smaa->JitteredMatrix(currWorldViewProj, SMAA::Mode(mode));
                 prevWorldViewProj = smaa->JitteredMatrix(prevWorldViewProj, SMAA::Mode(mode));
             }
@@ -689,6 +697,13 @@ void runSMAA(ID3D10Device *device, RenderTargetCollection &rtc, SMAA::Mode mode)
             smaa->go(*rtc.sceneRT, *rtc.sceneRT_SRGB, *rtc.depthRT, *rtc.velocityRT, *rtc.previousRT[currentIndex], *rtc.mainDS, input, mode);
             smaa->reproject(*rtc.previousRT[currentIndex], *rtc.previousRT[previousIndex], *rtc.velocityRT, *backbufferRT);
             break;
+        case SMAA::MODE_SMAA_TU4X: {
+            smaa->go(*rtc.sceneRT, *rtc.sceneRT_SRGB, *rtc.depthRT, *rtc.velocityRT, *rtc.previousRT[currentIndex], *rtc.mainDS, input, mode);
+            ID3D10ShaderResourceView *previous = rtc.tu4xHistoryValid? static_cast<ID3D10ShaderResourceView *>(*rtc.previousRT[previousIndex]) : nullptr;
+            smaa->reproject(*rtc.previousRT[currentIndex], previous, *rtc.velocityRT, *backbufferRT, mode);
+            rtc.tu4xHistoryValid = true;
+            break;
+        }
         case SMAA::MODE_SMAA_S2X:
             smaa->separate(*rtc.sceneRT_MS, *rtc.tmpRT[0], *rtc.tmpRT[1]);
             smaa->go(*rtc.tmpRT[0], *rtc.tmpRT_SRGB[0], *rtc.depthRT, nullptr, *backbufferRT, *rtc.mainDS, input, mode, 0);
@@ -710,12 +725,16 @@ void runAA(ID3D10Device *device, RenderTargetCollection &rtc, int mode) {
     bool smaaEnabled = hud.GetCheckBox(IDC_SMAA_FILTERING)->GetChecked() &&
                        mode <= SMAA::MODE_SMAA_COUNT;
 
+    if (!smaaEnabled || mode != SMAA::MODE_SMAA_TU4X)
+        rtc.tu4xHistoryValid = false;
+
     if (smaaEnabled) {
         switch (mode) {
             case SMAA::MODE_SMAA_1X:
             case SMAA::MODE_SMAA_T2X:
             case SMAA::MODE_SMAA_S2X:
             case SMAA::MODE_SMAA_4X:
+            case SMAA::MODE_SMAA_TU4X:
                 runSMAA(device, rtc, SMAA::Mode(mode));
                 break;
             default:
@@ -1010,6 +1029,8 @@ void CALLBACK keyboardProc(UINT nchar, bool keyDown, bool altDown, void *context
             fstream f("Movie.txt", fstream::in);
             f >> camera;
             f >> recPlayDuration;
+            renderTargetCollection[0].tu4xHistoryValid = false;
+            renderTargetCollection[1].tu4xHistoryValid = false;
             break;
     }
 }

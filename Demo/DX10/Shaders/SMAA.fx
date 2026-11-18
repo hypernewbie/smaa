@@ -38,6 +38,8 @@ float4 subsampleIndices;
  * 1.0 (no blending).
  */
 float blendFactor;
+float neighborhoodBlendingStrength = 1.0;
+float4 tu4xBounds;
 
 /**
  * This can be ignored; its purpose is to support interactive custom parameter
@@ -68,6 +70,7 @@ float cornerRounding;
 #endif
 
 // And include our header!
+#define SMAA_NEIGHBORHOOD_BLENDING_STRENGTH neighborhoodBlendingStrength
 #include "SMAA.hlsl"
 
 // Set pixel shader version accordingly:
@@ -227,6 +230,17 @@ float4 DX10_SMAAResolvePS(float4 position : SV_POSITION,
     #endif
 }
 
+float4 DX10_SMAATU4xResolvePS(float4 position : SV_POSITION,
+                              float2 texcoord : TEXCOORD0) : SV_TARGET {
+    if (all(texcoord >= tu4xBounds.xy) && all(texcoord < tu4xBounds.zw)) {
+        float2 velocity = SMAA_DECODE_VELOCITY(SMAASampleLevelZeroPoint(velocityTex, texcoord));
+        float2 previousTexcoord = texcoord - velocity;
+        if (all(previousTexcoord >= tu4xBounds.xy) && all(previousTexcoord < tu4xBounds.zw))
+            return SMAATU4xResolvePS(texcoord, previousTexcoord, SMAA_RT_METRICS.xy, colorTex, colorTexPrev);
+    }
+    return SMAASampleLevelZeroPoint(colorTex, texcoord);
+}
+
 void DX10_SMAASeparatePS(float4 position : SV_POSITION,
                          float2 texcoord : TEXCOORD0,
                          out float4 target0 : SV_TARGET0,
@@ -234,6 +248,7 @@ void DX10_SMAASeparatePS(float4 position : SV_POSITION,
     SMAASeparatePS(position, texcoord, target0, target1, colorTexMS);
 }
 
+#if SMAA_TU4X_PHASE == 0
 /**
  * Edge detection techniques
  */
@@ -321,6 +336,18 @@ technique10 Separate {
         SetVertexShader(CompileShader(vs_4_0, DX10_SMAASeparateVS()));
         SetGeometryShader(NULL);
         SetPixelShader(CompileShader(PS_VERSION, DX10_SMAASeparatePS()));
+
+        SetDepthStencilState(DisableDepthStencil, 0);
+        SetBlendState(NoBlending, float4(0.0f, 0.0f, 0.0f, 0.0f), 0xFFFFFFFF);
+    }
+}
+#endif
+
+technique10 TU4xResolve {
+    pass TU4xResolve {
+        SetVertexShader(CompileShader(vs_4_0, DX10_SMAAResolveVS()));
+        SetGeometryShader(NULL);
+        SetPixelShader(CompileShader(PS_VERSION, DX10_SMAATU4xResolvePS()));
 
         SetDepthStencilState(DisableDepthStencil, 0);
         SetBlendState(NoBlending, float4(0.0f, 0.0f, 0.0f, 0.0f), 0xFFFFFFFF);
