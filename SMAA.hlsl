@@ -298,7 +298,8 @@
 
 /**
  * Note that if you use one of these presets, the following configuration
- * macros will be ignored if set in the "Configurable Defines" section.
+ * macros will be ignored if set in the "Configurable Defines" section, except
+ * SMAA_THRESHOLD with the high preset.
  */
 
 #if defined(SMAA_PRESET_LOW)
@@ -312,7 +313,9 @@
 #define SMAA_DISABLE_DIAG_DETECTION
 #define SMAA_DISABLE_CORNER_DETECTION
 #elif defined(SMAA_PRESET_HIGH)
-#define SMAA_THRESHOLD 0.1
+#ifndef SMAA_THRESHOLD
+#define SMAA_THRESHOLD 0.2
+#endif
 #define SMAA_MAX_SEARCH_STEPS 16
 #define SMAA_MAX_SEARCH_STEPS_DIAG 8
 #define SMAA_CORNER_ROUNDING 25
@@ -339,7 +342,7 @@
  *   contrast edges are properly filtered by just 2x.
  */
 #ifndef SMAA_THRESHOLD
-#define SMAA_THRESHOLD 0.1
+#define SMAA_THRESHOLD 0.2
 #endif
 
 /**
@@ -391,6 +394,18 @@
  */
 #ifndef SMAA_CORNER_ROUNDING
 #define SMAA_CORNER_ROUNDING 25
+#endif
+
+/**
+ * SMAA_NEIGHBORHOOD_BLENDING_STRENGTH controls how much spatial blending
+ * is applied. 0.0 keeps the original color, while 1.0 uses the full SMAA
+ * result.
+ *
+ * The default of 0.5 assumes TU4x, which adds more filtering. For SMAA T2x
+ * or spatial-only SMAA, use 1.0.
+ */
+#ifndef SMAA_NEIGHBORHOOD_BLENDING_STRENGTH
+#define SMAA_NEIGHBORHOOD_BLENDING_STRENGTH 0.5
 #endif
 
 /**
@@ -1306,6 +1321,7 @@ float4 SMAANeighborhoodBlendingPS(float2 texcoord,
         // neighbor:
         float4 color = blendingWeight.x * SMAASampleLevelZero(colorTex, blendingCoord.xy);
         color += blendingWeight.y * SMAASampleLevelZero(colorTex, blendingCoord.zw);
+        color = lerp(SMAASampleLevelZero(colorTex, texcoord), color, SMAA_NEIGHBORHOOD_BLENDING_STRENGTH);
 
         #if SMAA_REPROJECTION
         // Antialias velocity for proper reprojection in a later stage:
