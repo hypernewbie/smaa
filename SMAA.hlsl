@@ -1364,6 +1364,18 @@ float3 SMAADifferentialBlendWeight(float3 neighborhood1[4],
 #undef SMAA_TU_UNDEF_RCP
 #endif
 
+// From Jorge Jimenez's Dynamic Temporal Antialiasing presentation, slide 33.
+float3 SMAADifferentialBlend(float3 neighborhood[4], float3 weights) {
+#if defined(SMAA_GLSL_3) || defined(SMAA_GLSL_4)
+    float4 color = float4(0.0);
+#else
+    float4 color = 0.0;
+#endif
+    color += float4(neighborhood[SMAA_NEIGHBORHOOD_WEST]  + neighborhood[SMAA_NEIGHBORHOOD_EAST],  1.0) * weights.x;
+    color += float4(neighborhood[SMAA_NEIGHBORHOOD_NORTH] + neighborhood[SMAA_NEIGHBORHOOD_SOUTH], 1.0) * weights.y;
+    return (0.5 * weights.z) * color.rgb;
+}
+
 //-----------------------------------------------------------------------------
 // Temporal Resolve Pixel Shader (Optional Pass)
 
