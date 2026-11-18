@@ -1411,6 +1411,30 @@ void SMAATU4xNeighborhoods(float3 current,
 #endif
 }
 
+// previousColorTex is reprojected to the current frame; use point-clamp sampling.
+void SMAATU4xGather(float2 texcoord,
+                    float2 inputPixelSize,
+                    SMAATexture2D(currentColorTex),
+                    SMAATexture2D(previousColorTex),
+                    out float3 currentColor,
+                    out float3 previousColor,
+                    out float3 neighborhood1[4],
+                    out float3 neighborhood2[4]) {
+#if SMAA_TU4X_PHASE == 0
+    float2 offset = inputPixelSize;
+#else
+    float2 offset = -inputPixelSize;
+#endif
+    currentColor = SMAASampleLevelZeroPoint(currentColorTex, texcoord).rgb;
+    previousColor = SMAASampleLevelZeroPoint(previousColorTex, texcoord).rgb;
+    float3 currentX = SMAASampleLevelZeroPoint(currentColorTex, texcoord + float2(offset.x, 0.0)).rgb;
+    float3 currentY = SMAASampleLevelZeroPoint(currentColorTex, texcoord + float2(0.0, offset.y)).rgb;
+    float3 previousX = SMAASampleLevelZeroPoint(previousColorTex, texcoord - float2(offset.x, 0.0)).rgb;
+    float3 previousY = SMAASampleLevelZeroPoint(previousColorTex, texcoord - float2(0.0, offset.y)).rgb;
+    SMAATU4xNeighborhoods(currentColor, currentX, currentY, previousColor, previousX, previousY,
+                          neighborhood1, neighborhood2);
+}
+
 // Pair neighborhood1 with previousColor, and neighborhood2 with currentColor.
 void SMAADifferentialBlendPair(float3 neighborhood1[4],
                                float3 neighborhood2[4],
