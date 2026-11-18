@@ -1381,70 +1381,40 @@ float3 SMAADifferentialBlend(float3 neighborhood[4], float3 weights) {
     return (0.5 * weights.z) * color.rgb;
 }
 
-// X/Y neighbors are sampled toward the opposite phase.
-void SMAATU4xNeighborhoods(float3 current,
-                           float3 currentX,
-                           float3 currentY,
-                           float3 previous,
-                           float3 previousX,
-                           float3 previousY,
-                           out float3 neighborhood1[4],
-                           out float3 neighborhood2[4]) {
+// previousTexcoord is reprojected; both textures use point-clamp sampling.
+float4 SMAATU4xResolvePS(float2 texcoord,
+                         float2 previousTexcoord,
+                         float2 inputPixelSize,
+                         SMAATexture2D(currentColorTex),
+                         SMAATexture2D(previousColorTex)) {
+    float4 currentColor = SMAASampleLevelZeroPoint(currentColorTex, texcoord);
+    float4 previousColor = SMAASampleLevelZeroPoint(previousColorTex, previousTexcoord);
+    float3 neighborhood1[4], neighborhood2[4];
 #if SMAA_TU4X_PHASE == 0
-    neighborhood1[SMAA_NEIGHBORHOOD_WEST]  = current;
-    neighborhood1[SMAA_NEIGHBORHOOD_EAST]  = currentX;
-    neighborhood1[SMAA_NEIGHBORHOOD_NORTH] = previousY;
-    neighborhood1[SMAA_NEIGHBORHOOD_SOUTH] = previous;
-    neighborhood2[SMAA_NEIGHBORHOOD_WEST]  = previousX;
-    neighborhood2[SMAA_NEIGHBORHOOD_EAST]  = previous;
-    neighborhood2[SMAA_NEIGHBORHOOD_NORTH] = current;
-    neighborhood2[SMAA_NEIGHBORHOOD_SOUTH] = currentY;
+    neighborhood1[SMAA_NEIGHBORHOOD_WEST]  = currentColor.rgb;
+    neighborhood1[SMAA_NEIGHBORHOOD_EAST]  = SMAASampleLevelZeroPoint(currentColorTex, texcoord + float2(inputPixelSize.x, 0.0)).rgb;
+    neighborhood1[SMAA_NEIGHBORHOOD_NORTH] = SMAASampleLevelZeroPoint(previousColorTex, previousTexcoord - float2(0.0, inputPixelSize.y)).rgb;
+    neighborhood1[SMAA_NEIGHBORHOOD_SOUTH] = previousColor.rgb;
+    neighborhood2[SMAA_NEIGHBORHOOD_WEST]  = SMAASampleLevelZeroPoint(previousColorTex, previousTexcoord - float2(inputPixelSize.x, 0.0)).rgb;
+    neighborhood2[SMAA_NEIGHBORHOOD_EAST]  = previousColor.rgb;
+    neighborhood2[SMAA_NEIGHBORHOOD_NORTH] = currentColor.rgb;
+    neighborhood2[SMAA_NEIGHBORHOOD_SOUTH] = SMAASampleLevelZeroPoint(currentColorTex, texcoord + float2(0.0, inputPixelSize.y)).rgb;
 #else
-    neighborhood1[SMAA_NEIGHBORHOOD_WEST]  = currentX;
-    neighborhood1[SMAA_NEIGHBORHOOD_EAST]  = current;
-    neighborhood1[SMAA_NEIGHBORHOOD_NORTH] = previous;
-    neighborhood1[SMAA_NEIGHBORHOOD_SOUTH] = previousY;
-    neighborhood2[SMAA_NEIGHBORHOOD_WEST]  = previous;
-    neighborhood2[SMAA_NEIGHBORHOOD_EAST]  = previousX;
-    neighborhood2[SMAA_NEIGHBORHOOD_NORTH] = currentY;
-    neighborhood2[SMAA_NEIGHBORHOOD_SOUTH] = current;
+    neighborhood1[SMAA_NEIGHBORHOOD_WEST]  = SMAASampleLevelZeroPoint(currentColorTex, texcoord - float2(inputPixelSize.x, 0.0)).rgb;
+    neighborhood1[SMAA_NEIGHBORHOOD_EAST]  = currentColor.rgb;
+    neighborhood1[SMAA_NEIGHBORHOOD_NORTH] = previousColor.rgb;
+    neighborhood1[SMAA_NEIGHBORHOOD_SOUTH] = SMAASampleLevelZeroPoint(previousColorTex, previousTexcoord + float2(0.0, inputPixelSize.y)).rgb;
+    neighborhood2[SMAA_NEIGHBORHOOD_WEST]  = previousColor.rgb;
+    neighborhood2[SMAA_NEIGHBORHOOD_EAST]  = SMAASampleLevelZeroPoint(previousColorTex, previousTexcoord + float2(inputPixelSize.x, 0.0)).rgb;
+    neighborhood2[SMAA_NEIGHBORHOOD_NORTH] = SMAASampleLevelZeroPoint(currentColorTex, texcoord - float2(0.0, inputPixelSize.y)).rgb;
+    neighborhood2[SMAA_NEIGHBORHOOD_SOUTH] = currentColor.rgb;
 #endif
-}
-
-// previousColorTex is reprojected to the current frame; use point-clamp sampling.
-void SMAATU4xGather(float2 texcoord,
-                    float2 inputPixelSize,
-                    SMAATexture2D(currentColorTex),
-                    SMAATexture2D(previousColorTex),
-                    out float3 currentColor,
-                    out float3 previousColor,
-                    out float3 neighborhood1[4],
-                    out float3 neighborhood2[4]) {
-#if SMAA_TU4X_PHASE == 0
-    float2 offset = inputPixelSize;
-#else
-    float2 offset = -inputPixelSize;
-#endif
-    currentColor = SMAASampleLevelZeroPoint(currentColorTex, texcoord).rgb;
-    previousColor = SMAASampleLevelZeroPoint(previousColorTex, texcoord).rgb;
-    float3 currentX = SMAASampleLevelZeroPoint(currentColorTex, texcoord + float2(offset.x, 0.0)).rgb;
-    float3 currentY = SMAASampleLevelZeroPoint(currentColorTex, texcoord + float2(0.0, offset.y)).rgb;
-    float3 previousX = SMAASampleLevelZeroPoint(previousColorTex, texcoord - float2(offset.x, 0.0)).rgb;
-    float3 previousY = SMAASampleLevelZeroPoint(previousColorTex, texcoord - float2(0.0, offset.y)).rgb;
-    SMAATU4xNeighborhoods(currentColor, currentX, currentY, previousColor, previousX, previousY,
-                          neighborhood1, neighborhood2);
-}
-
-// Pair neighborhood1 with previousColor, and neighborhood2 with currentColor.
-void SMAADifferentialBlendPair(float3 neighborhood1[4],
-                               float3 neighborhood2[4],
-                               inout float3 currentColor,
-                               inout float3 previousColor) {
     float3 weights = SMAADifferentialBlendWeight(neighborhood1, neighborhood2);
     float3 previousReconstructedColor = SMAADifferentialBlend(neighborhood1, weights);
     float3 currentReconstructedColor = SMAADifferentialBlend(neighborhood2, weights);
-    previousColor = lerp(previousColor, previousReconstructedColor, 0.5);
-    currentColor  = lerp(currentColor,  currentReconstructedColor,  0.5);
+    previousColor.rgb = lerp(previousColor.rgb, previousReconstructedColor, 0.5);
+    currentColor.rgb = lerp(currentColor.rgb, currentReconstructedColor, 0.5);
+    return 0.5 * (currentColor + previousColor);
 }
 
 //-----------------------------------------------------------------------------
